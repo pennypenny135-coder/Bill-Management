@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useStoreContext } from '../store/StoreContext';
 import { cn } from '../utils/cn';
+import WorkspaceTabs from './WorkspaceTabs';
 
 const NAV_ITEMS = [
   { path: '/', icon: LayoutDashboard, label: '主頁' },
@@ -22,14 +23,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const dark = data.settings.darkMode;
 
-  // Apply dark class to html element
-  if (typeof document !== 'undefined') {
-    document.documentElement.classList.toggle('dark', dark);
-  }
-
   return (
     <div className={cn('min-h-screen flex', dark ? 'dark' : '')}>
-      {/* Sidebar (desktop) */}
+      {/* ── Sidebar (desktop) ── */}
       <aside className="hidden lg:flex flex-col w-60 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 fixed h-full z-30">
         <div className="p-5 border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
@@ -54,8 +50,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                 )}
               >
-                <Icon size={18} />
-                {label}
+                <Icon size={18} />{label}
               </Link>
             );
           })}
@@ -65,13 +60,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => updateSettings({ darkMode: !dark })}
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
+            aria-label="切換深淺色模式"
           >
             {dark ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         </div>
       </aside>
 
-      {/* Mobile header */}
+      {/* ── Mobile header ── */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-xl">🏦</span>
@@ -81,6 +77,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => updateSettings({ darkMode: !dark })}
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+            aria-label="切換深淺色模式"
           >
             {dark ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -93,7 +90,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* Mobile drawer */}
+      {/* ── Mobile drawer ── */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
@@ -103,18 +100,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <span className="text-xl">🏦</span>
                 <span className="font-bold text-slate-900 dark:text-white">帳單管家</span>
               </div>
-              <button onClick={() => setMobileOpen(false)} className="p-1 text-slate-500">
-                <X size={20} />
-              </button>
+              <button onClick={() => setMobileOpen(false)} className="p-1 text-slate-500"><X size={20} /></button>
+            </div>
+            <div className="border-b border-slate-200 dark:border-slate-700">
+              <WorkspaceTabs />
             </div>
             <nav className="flex-1 p-3 space-y-1">
               {NAV_ITEMS.map(({ path, icon: Icon, label }) => {
                 const active = location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
                 return (
-                  <Link
-                    key={path}
-                    to={path}
-                    onClick={() => setMobileOpen(false)}
+                  <Link key={path} to={path} onClick={() => setMobileOpen(false)}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                       active
@@ -122,8 +117,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         : 'text-slate-600 dark:text-slate-400'
                     )}
                   >
-                    <Icon size={18} />
-                    {label}
+                    <Icon size={18} />{label}
                   </Link>
                 );
               })}
@@ -132,8 +126,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Main content */}
+      {/* ── Main content ── */}
       <main className="flex-1 lg:ml-60 min-h-screen bg-slate-50 dark:bg-slate-950">
+        {/* Workspace tabs — sticky top, desktop only */}
+        <div className="hidden lg:block sticky top-0 z-20">
+          <WorkspaceTabs />
+        </div>
         <div className="pt-14 lg:pt-0 min-h-screen">
           {children}
         </div>

@@ -8,7 +8,7 @@ export interface Category {
   active: boolean;
 }
 
-// ─── Payment Methods ───────────────────────────────────────────────────────────
+// ─── Payment Methods ─────────────────────────────────────────────────────────
 export type PaymentMethodType =
   | 'cash'
   | 'credit_card'
@@ -34,7 +34,7 @@ export interface PaymentMethod {
   updatedAt: string;
 }
 
-// ─── Bill Items ────────────────────────────────────────────────────────────────
+// ─── Bill Items ───────────────────────────────────────────────────────────────
 export type RecurrenceType =
   | 'monthly'
   | 'bimonthly'
@@ -49,8 +49,8 @@ export interface BillItem {
   name: string;
   categoryId: string;
   recurrenceType: RecurrenceType;
-  recurrenceInterval?: number; // for custom, in months
-  dueDay?: number; // day of month, 1-31
+  recurrenceInterval?: number;
+  dueDay?: number;
   defaultAmount?: number;
   defaultPaymentMethodId?: string;
   note?: string;
@@ -59,12 +59,12 @@ export interface BillItem {
   updatedAt: string;
 }
 
-// ─── Bill Records ──────────────────────────────────────────────────────────────
+// ─── Bill Records ─────────────────────────────────────────────────────────────
 export interface BillRecord {
   id: string;
   billItemId: string;
-  period: string; // e.g. "2026-06"
-  dueDate?: string; // ISO date string
+  period: string;
+  dueDate?: string;
   amount?: number;
   paid: boolean;
   paidDate?: string;
@@ -74,7 +74,7 @@ export interface BillRecord {
   updatedAt: string;
 }
 
-// ─── App Settings ──────────────────────────────────────────────────────────────
+// ─── App Settings ─────────────────────────────────────────────────────────────
 export interface AppSettings {
   currency: string;
   currencySymbol: string;
@@ -84,7 +84,7 @@ export interface AppSettings {
   language: 'zh-HK' | 'en';
 }
 
-// ─── App Store ─────────────────────────────────────────────────────────────────
+// ─── App Data (per workspace) ─────────────────────────────────────────────────
 export interface AppData {
   categories: Category[];
   paymentMethods: PaymentMethod[];
@@ -92,4 +92,20 @@ export interface AppData {
   billRecords: BillRecord[];
   settings: AppSettings;
   version: string;
+}
+
+// ─── Multi-Workspace ──────────────────────────────────────────────────────────
+export const MAX_WORKSPACES = 3;
+
+export interface Workspace {
+  id: string;
+  name: string;
+  createdAt: string;
+  data: AppData;
+}
+
+export interface WorkspaceRoot {
+  version: string;
+  activeWorkspaceId: string;
+  workspaces: Workspace[];
 }
