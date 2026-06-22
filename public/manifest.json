@@ -1,0 +1,26 @@
+{
+  "name": "帳單管家 — 家庭固定支出追蹤",
+  "short_name": "帳單管家",
+  "description": "記錄每月固定帳單、追蹤付款狀態、管理付款方法",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#6366f1",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity"],
+  "lang": "zh-HK"
+}
