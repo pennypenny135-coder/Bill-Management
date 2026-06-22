@@ -14,7 +14,6 @@ import { MAX_WORKSPACES } from '../types';
 
 const STORAGE_KEY = 'billmaster_v2';
 
-// ─── Empty data factory (no seed, dark mode default) ─────────────────────────
 function createEmptyAppData(darkMode = true): AppData {
   return {
     version: '1.0.0',
@@ -56,7 +55,6 @@ function createInitialRoot(): WorkspaceRoot {
   return { version: '2.0.0', activeWorkspaceId: ws.id, workspaces: [ws] };
 }
 
-// ─── Load / Save ──────────────────────────────────────────────────────────────
 function loadRoot(): WorkspaceRoot {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -78,18 +76,15 @@ function saveRoot(root: WorkspaceRoot) {
   }
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 export function useStore() {
   const [root, setRoot] = useState<WorkspaceRoot>(() => loadRoot());
 
   useEffect(() => { saveRoot(root); }, [root]);
 
-  // Active workspace
   const activeWs =
     root.workspaces.find((w) => w.id === root.activeWorkspaceId) ?? root.workspaces[0];
   const data = activeWs.data;
 
-  // Apply dark mode to <html> element
   useEffect(() => {
     document.documentElement.classList.toggle('dark', data.settings.darkMode);
   }, [data.settings.darkMode]);
@@ -105,7 +100,7 @@ export function useStore() {
 
   const now = () => new Date().toISOString();
 
-  // ─── Workspace management ─────────────────────────────────────────────────
+  // ── Workspace ──────────────────────────────────────────────────────────────
   const workspaces = root.workspaces;
   const activeWorkspaceId = root.activeWorkspaceId;
 
@@ -139,7 +134,7 @@ export function useStore() {
     });
   }, []);
 
-  // ─── Categories ───────────────────────────────────────────────────────────
+  // ── Categories ─────────────────────────────────────────────────────────────
   const addCategory = useCallback((cat: Omit<Category, 'id'>) => {
     setData((d) => ({ ...d, categories: [...d.categories, { ...cat, id: uuidv4() }] }));
   }, [setData]);
@@ -152,7 +147,16 @@ export function useStore() {
     setData((d) => ({ ...d, categories: d.categories.filter((c) => c.id !== id) }));
   }, [setData]);
 
-  // ─── Payment Methods ──────────────────────────────────────────────────────
+  const reorderCategories = useCallback((fromIndex: number, toIndex: number) => {
+    setData((d) => {
+      const arr = [...d.categories];
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, moved);
+      return { ...d, categories: arr };
+    });
+  }, [setData]);
+
+  // ── Payment Methods ────────────────────────────────────────────────────────
   const addPaymentMethod = useCallback((pm: Omit<PaymentMethod, 'id' | 'createdAt' | 'updatedAt'>) => {
     const t = now();
     setData((d) => ({
@@ -174,7 +178,16 @@ export function useStore() {
     setData((d) => ({ ...d, paymentMethods: d.paymentMethods.filter((pm) => pm.id !== id) }));
   }, [setData]);
 
-  // ─── Bill Items ───────────────────────────────────────────────────────────
+  const reorderPaymentMethods = useCallback((fromIndex: number, toIndex: number) => {
+    setData((d) => {
+      const arr = [...d.paymentMethods];
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, moved);
+      return { ...d, paymentMethods: arr };
+    });
+  }, [setData]);
+
+  // ── Bill Items ─────────────────────────────────────────────────────────────
   const addBillItem = useCallback((item: Omit<BillItem, 'id' | 'createdAt' | 'updatedAt'>) => {
     const t = now();
     setData((d) => ({
@@ -198,7 +211,7 @@ export function useStore() {
     }));
   }, [setData]);
 
-  // ─── Bill Records ─────────────────────────────────────────────────────────
+  // ── Bill Records ───────────────────────────────────────────────────────────
   const addBillRecord = useCallback((rec: Omit<BillRecord, 'id' | 'createdAt' | 'updatedAt'>) => {
     const t = now();
     setData((d) => ({
@@ -260,12 +273,12 @@ export function useStore() {
     });
   }, [setData]);
 
-  // ─── Settings ─────────────────────────────────────────────────────────────
+  // ── Settings ───────────────────────────────────────────────────────────────
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
     setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
   }, [setData]);
 
-  // ─── Export (current workspace) ───────────────────────────────────────────
+  // ── Export (current workspace) ─────────────────────────────────────────────
   const exportJSON = useCallback(() => {
     const ws = root.workspaces.find((w) => w.id === root.activeWorkspaceId) ?? root.workspaces[0];
     const blob = new Blob([JSON.stringify(ws.data, null, 2)], { type: 'application/json' });
@@ -300,7 +313,6 @@ export function useStore() {
     URL.revokeObjectURL(url);
   }, [root]);
 
-  // ─── Import (into current workspace) ─────────────────────────────────────
   const importJSON = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -314,7 +326,7 @@ export function useStore() {
     reader.readAsText(file);
   }, [setData]);
 
-  // ─── Export ALL workspaces ────────────────────────────────────────────────
+  // ── Export/Import ALL workspaces ───────────────────────────────────────────
   const exportAllJSON = useCallback(() => {
     const blob = new Blob([JSON.stringify(root, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -325,7 +337,6 @@ export function useStore() {
     URL.revokeObjectURL(url);
   }, [root]);
 
-  // ─── Import ALL workspaces ────────────────────────────────────────────────
   const importAllJSON = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -351,27 +362,15 @@ export function useStore() {
 
   return {
     data,
-    // Workspace
-    workspaces,
-    activeWorkspaceId,
-    switchWorkspace,
-    addWorkspace,
-    renameWorkspace,
-    deleteWorkspace,
-    // Categories
-    addCategory, updateCategory, deleteCategory,
-    // Payment Methods
-    addPaymentMethod, updatePaymentMethod, deletePaymentMethod,
-    // Bill Items
+    workspaces, activeWorkspaceId,
+    switchWorkspace, addWorkspace, renameWorkspace, deleteWorkspace,
+    addCategory, updateCategory, deleteCategory, reorderCategories,
+    addPaymentMethod, updatePaymentMethod, deletePaymentMethod, reorderPaymentMethods,
     addBillItem, updateBillItem, deleteBillItem,
-    // Bill Records
     addBillRecord, updateBillRecord, deleteBillRecord,
     markPaid, generateRecordsForPeriod,
-    // Settings
     updateSettings,
-    // Export/Import (current workspace)
     exportJSON, exportCSV, importJSON,
-    // Export/Import (all workspaces)
     exportAllJSON, importAllJSON,
     resetToSeed,
   };
