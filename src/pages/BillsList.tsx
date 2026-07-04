@@ -33,7 +33,6 @@ export default function BillsList() {
   const periodRecords = useMemo(() => {
     let records = data.billRecords.filter((r) => r.period === period);
 
-    // Search
     if (search) {
       const q = search.toLowerCase();
       records = records.filter((r) => {
@@ -42,7 +41,6 @@ export default function BillsList() {
       });
     }
 
-    // Category filter
     if (filterCat !== 'all') {
       const catBillIds = data.billItems
         .filter((b) => b.categoryId === filterCat)
@@ -50,7 +48,6 @@ export default function BillsList() {
       records = records.filter((r) => catBillIds.includes(r.billItemId));
     }
 
-    // Status filter
     if (filterStatus !== 'all') {
       records = records.filter((r) => {
         const s = getRecordStatus(r);
@@ -61,12 +58,10 @@ export default function BillsList() {
       });
     }
 
-    // Payment method filter
     if (filterPm !== 'all') {
       records = records.filter((r) => r.paymentMethodId === filterPm);
     }
 
-    // Sort
     records = [...records].sort((a, b) => {
       if (sortKey === 'dueDate') {
         return (a.dueDate ?? '').localeCompare(b.dueDate ?? '');
@@ -96,7 +91,6 @@ export default function BillsList() {
 
   return (
     <div className="p-4 lg:p-6 max-w-5xl mx-auto space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">帳單列表</h1>
         <div className="flex items-center gap-2">
@@ -111,7 +105,6 @@ export default function BillsList() {
         </div>
       </div>
 
-      {/* Period navigator */}
       <div className="flex items-center justify-center gap-4">
         <button onClick={() => setPeriod(addMonths(period, -1))} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">
           <ArrowLeft size={18} />
@@ -124,7 +117,6 @@ export default function BillsList() {
         </button>
       </div>
 
-      {/* Summary */}
       <div className="grid grid-cols-3 gap-3 text-center">
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
           <p className="text-xs text-slate-500 dark:text-slate-400">總計</p>
@@ -140,7 +132,6 @@ export default function BillsList() {
         </div>
       </div>
 
-      {/* Search & Filter */}
       <div className="space-y-2">
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -189,7 +180,6 @@ export default function BillsList() {
         )}
       </div>
 
-      {/* Quick filters */}
       <div className="flex gap-2 flex-wrap">
         {(['all', 'unpaid', 'overdue', 'paid'] as FilterStatus[]).map((s) => (
           <button
@@ -202,7 +192,6 @@ export default function BillsList() {
         ))}
       </div>
 
-      {/* List */}
       <div className="space-y-2">
         {periodRecords.length === 0 ? (
           <Card>
@@ -223,17 +212,24 @@ export default function BillsList() {
             const cat = data.categories.find((c) => c.id === item?.categoryId);
             const pm = data.paymentMethods.find((p) => p.id === record.paymentMethodId);
             const status = getRecordStatus(record);
-            const statusVariant = status === 'paid' ? 'success' : status === 'overdue' ? 'danger' : status === 'due_soon' ? 'warning' : 'default';
+            const statusVariant =
+              status === 'paid' ? 'success' :
+              status === 'overdue' ? 'danger' :
+              status === 'due_soon' ? 'warning' : 'default';
+
             return (
               <div
                 key={record.id}
                 className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex items-center gap-3 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors"
                 onClick={() => setSelectedRecord(record)}
               >
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ backgroundColor: cat?.color + '20' }}>
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0"
+                  style={{ backgroundColor: cat?.color + '20' }}
+                >
                   {cat?.icon ?? '📋'}
                 </div>
+
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="font-medium text-slate-900 dark:text-white text-sm">{item?.name}</p>
@@ -249,20 +245,23 @@ export default function BillsList() {
                     {cat && <span style={{ color: cat.color }}>{cat.name}</span>}
                   </div>
                 </div>
+
                 <div className="text-right flex-shrink-0">
                   <p className="font-bold text-slate-900 dark:text-white text-sm">
                     {formatCurrency(record.amount, sym)}
                   </p>
-                  {!record.paid && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); markPaid(record.id, true); }}
-                      className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline mt-0.5"
-                    >
-                      ✓ 已付
-                    </button>
-                  )}
-                  {record.paid && (
+                  {status === 'paid' ? (
                     <p className="text-xs text-emerald-500 mt-0.5">✓ 已付</p>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        markPaid(record.id, true);
+                      }}
+                      className="text-xs text-amber-600 dark:text-amber-400 hover:underline mt-0.5"
+                    >
+                      {getStatusLabel(status)}
+                    </button>
                   )}
                 </div>
               </div>
@@ -271,7 +270,6 @@ export default function BillsList() {
         )}
       </div>
 
-      {/* Record detail modal */}
       {selectedRecord && (
         <RecordDetailModal
           record={selectedRecord}
