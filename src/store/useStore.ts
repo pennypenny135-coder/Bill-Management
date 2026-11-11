@@ -1,395 +1,156 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import type {
-  AppData,
-  Category,
-  PaymentMethod,
-  BillItem,
-  BillRecord,
-  AppSettings,
-  Workspace,
-  WorkspaceRoot,
-} from '../types';
+import type { AppData, AppSettings, BillItem, BillRecord, Category, PaymentMethod, Workspace, WorkspaceRoot } from '../types';
 import { MAX_WORKSPACES } from '../types';
+import { useAuth } from '../auth/AuthProvider';
+import { useCloudRoot } from './useCloudRoot';
 
-const STORAGE_KEY = 'billmaster_v2';
-
-function createEmptyAppData(darkMode = true): AppData {
-  return {
-    version: '1.0.0',
-    settings: {
-      currency: 'HKD',
-      currencySymbol: 'HK$',
-      darkMode,
-      firstDayOfMonth: 1,
-      defaultView: 'dashboard',
-      language: 'zh-HK',
-    },
+const now = () => new Date().toISOString();
+function emptyData(darkMode = true): AppData {
+  return { version: '1.0.0', settings: { currency: 'HKD', currencySymbol: 'HK$', darkMode, firstDayOfMonth: 1, defaultView: 'dashboard', language: 'zh-HK' },
     categories: [
-      { id: 'cat-utility',      name: '水電煤',  color: '#f59e0b', icon: '⚡',  builtIn: true, active: true },
-      { id: 'cat-telecom',      name: '通訊',    color: '#3b82f6', icon: '📱',  builtIn: true, active: true },
-      { id: 'cat-net',          name: '網絡',    color: '#06b6d4', icon: '🌐',  builtIn: true, active: true },
-      { id: 'cat-insurance',    name: '保險',    color: '#10b981', icon: '🛡️', builtIn: true, active: true },
-      { id: 'cat-credit',       name: '信用卡',  color: '#8b5cf6', icon: '💳',  builtIn: true, active: true },
-      { id: 'cat-subscription', name: '訂閱',    color: '#ec4899', icon: '📺',  builtIn: true, active: true },
-      { id: 'cat-mgmt',         name: '管理費',  color: '#64748b', icon: '🏢',  builtIn: true, active: true },
-      { id: 'cat-other',        name: '其他',    color: '#94a3b8', icon: '📋',  builtIn: true, active: true },
-    ],
-    paymentMethods: [],
-    billItems: [],
-    billRecords: [],
-  };
+      ['cat-utility', '水電煤', '#f59e0b', '⚡'], ['cat-telecom', '通訊', '#3b82f6', '📱'],
+      ['cat-net', '網絡', '#06b6d4', '🌐'], ['cat-insurance', '保險', '#10b981', '🛡️'],
+      ['cat-credit', '信用卡', '#8b5cf6', '💳'], ['cat-subscription', '訂閱', '#ec4899', '📺'],
+      ['cat-mgmt', '管理費', '#64748b', '🏢'], ['cat-other', '其他', '#94a3b8', '📋'],
+    ].map(([id, name, color, icon]) => ({ id, name, color, icon, builtIn: true, active: true })),
+    paymentMethods: [], billItems: [], billRecords: [] };
 }
-
-function createWorkspace(name: string, darkMode = true): Workspace {
-  return {
-    id: uuidv4(),
-    name,
-    createdAt: new Date().toISOString(),
-    data: createEmptyAppData(darkMode),
-  };
+function workspace(name: string, darkMode = true): Workspace {
+  return { id: uuidv4(), name, createdAt: now(), data: emptyData(darkMode) };
 }
-
-function createInitialRoot(): WorkspaceRoot {
-  const ws = createWorkspace('主帳戶', true);
+function initialRoot(): WorkspaceRoot {
+  const ws = workspace('主帳戶');
   return { version: '2.0.0', activeWorkspaceId: ws.id, workspaces: [ws] };
 }
-
-function loadRoot(): WorkspaceRoot {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.workspaces && parsed.activeWorkspaceId) return parsed as WorkspaceRoot;
-    }
-  } catch (e) {
-    console.error('Failed to load data', e);
-  }
-  return createInitialRoot();
+function patch<T extends { id: string }>(rows: T[], id: string, value: Partial<T>) {
+  return rows.map(row => row.id === id ? { ...row, ...value, id: row.id } : row);
 }
-
-function saveRoot(root: WorkspaceRoot) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(root));
-  } catch (e) {
-    console.error('Failed to save data', e);
-  }
+function reorder<T>(rows: T[], from: number, to: number): T[] {
+  if (from < 0 || to < 0 || from >= rows.length || to >= rows.length) return rows;
+  const result = [...rows]; const [row] = result.splice(from, 1); result.splice(to, 0, row); return result;
 }
-
-export function useStore() {
-  const [root, setRoot] = useState<WorkspaceRoot>(() => loadRoot());
-
-  useEffect(() => { saveRoot(root); }, [root]);
-
-  const activeWs =
-    root.workspaces.find((w) => w.id === root.activeWorkspaceId) ?? root.workspaces[0];
-  const data = activeWs.data;
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', data.settings.darkMode);
-  }, [data.settings.darkMode]);
-
-  const setData = useCallback((updater: (d: AppData) => AppData) => {
-    setRoot((r) => ({
-      ...r,
-      workspaces: r.workspaces.map((w) =>
-        w.id === r.activeWorkspaceId ? { ...w, data: updater(w.data) } : w
-      ),
-    }));
-  }, []);
-
-  const now = () => new Date().toISOString();
-
-  // ── Workspace ──────────────────────────────────────────────────────────────
-  const workspaces = root.workspaces;
-  const activeWorkspaceId = root.activeWorkspaceId;
-
-  const switchWorkspace = useCallback((id: string) => {
-    setRoot((r) => ({ ...r, activeWorkspaceId: id }));
-  }, []);
-
-  const addWorkspace = useCallback((name: string) => {
-    setRoot((r) => {
-      if (r.workspaces.length >= MAX_WORKSPACES) return r;
-      const darkMode = r.workspaces[0]?.data.settings.darkMode ?? true;
-      const ws = createWorkspace(name, darkMode);
-      return { ...r, activeWorkspaceId: ws.id, workspaces: [...r.workspaces, ws] };
-    });
-  }, []);
-
-  const renameWorkspace = useCallback((id: string, name: string) => {
-    setRoot((r) => ({
-      ...r,
-      workspaces: r.workspaces.map((w) => (w.id === id ? { ...w, name } : w)),
-    }));
-  }, []);
-
-  const deleteWorkspace = useCallback((id: string) => {
-    setRoot((r) => {
-      if (r.workspaces.length <= 1) return r;
-      const remaining = r.workspaces.filter((w) => w.id !== id);
-      const newActive =
-        r.activeWorkspaceId === id ? remaining[0].id : r.activeWorkspaceId;
-      return { ...r, activeWorkspaceId: newActive, workspaces: remaining };
-    });
-  }, []);
-
-  // ── Categories ─────────────────────────────────────────────────────────────
-  const addCategory = useCallback((cat: Omit<Category, 'id'>) => {
-    setData((d) => ({ ...d, categories: [...d.categories, { ...cat, id: uuidv4() }] }));
-  }, [setData]);
-
-  const updateCategory = useCallback((id: string, patch: Partial<Category>) => {
-    setData((d) => ({ ...d, categories: d.categories.map((c) => c.id === id ? { ...c, ...patch } : c) }));
-  }, [setData]);
-
-  const deleteCategory = useCallback((id: string) => {
-    setData((d) => ({ ...d, categories: d.categories.filter((c) => c.id !== id) }));
-  }, [setData]);
-
-  const reorderCategories = useCallback((fromIndex: number, toIndex: number) => {
-    setData((d) => {
-      const arr = [...d.categories];
-      const [moved] = arr.splice(fromIndex, 1);
-      arr.splice(toIndex, 0, moved);
-      return { ...d, categories: arr };
-    });
-  }, [setData]);
-
-  // ── Payment Methods ────────────────────────────────────────────────────────
-  const addPaymentMethod = useCallback((pm: Omit<PaymentMethod, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const t = now();
-    setData((d) => ({
-      ...d,
-      paymentMethods: [...d.paymentMethods, { ...pm, id: uuidv4(), createdAt: t, updatedAt: t }],
-    }));
-  }, [setData]);
-
-  const updatePaymentMethod = useCallback((id: string, patch: Partial<PaymentMethod>) => {
-    setData((d) => ({
-      ...d,
-      paymentMethods: d.paymentMethods.map((pm) =>
-        pm.id === id ? { ...pm, ...patch, updatedAt: now() } : pm
-      ),
-    }));
-  }, [setData]);
-
-  const deletePaymentMethod = useCallback((id: string) => {
-    setData((d) => ({ ...d, paymentMethods: d.paymentMethods.filter((pm) => pm.id !== id) }));
-  }, [setData]);
-
-  const reorderPaymentMethods = useCallback((fromIndex: number, toIndex: number) => {
-    setData((d) => {
-      const arr = [...d.paymentMethods];
-      const [moved] = arr.splice(fromIndex, 1);
-      arr.splice(toIndex, 0, moved);
-      return { ...d, paymentMethods: arr };
-    });
-  }, [setData]);
-
-  // ── Bill Items ─────────────────────────────────────────────────────────────
-  const addBillItem = useCallback((item: Omit<BillItem, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const t = now();
-    setData((d) => ({
-      ...d,
-      billItems: [...d.billItems, { ...item, id: uuidv4(), createdAt: t, updatedAt: t }],
-    }));
-  }, [setData]);
-
-  const updateBillItem = useCallback((id: string, patch: Partial<BillItem>) => {
-    setData((d) => ({
-      ...d,
-      billItems: d.billItems.map((b) => b.id === id ? { ...b, ...patch, updatedAt: now() } : b),
-    }));
-  }, [setData]);
-
-  const deleteBillItem = useCallback((id: string) => {
-    setData((d) => ({
-      ...d,
-      billItems: d.billItems.filter((b) => b.id !== id),
-      billRecords: d.billRecords.filter((r) => r.billItemId !== id),
-    }));
-  }, [setData]);
-
-  // ── Bill Records ───────────────────────────────────────────────────────────
-  const addBillRecord = useCallback((rec: Omit<BillRecord, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const t = now();
-    setData((d) => ({
-      ...d,
-      billRecords: [...d.billRecords, { ...rec, id: uuidv4(), createdAt: t, updatedAt: t }],
-    }));
-  }, [setData]);
-
-  const updateBillRecord = useCallback((id: string, patch: Partial<BillRecord>) => {
-    setData((d) => ({
-      ...d,
-      billRecords: d.billRecords.map((r) =>
-        r.id === id ? { ...r, ...patch, updatedAt: now() } : r
-      ),
-    }));
-  }, [setData]);
-
-  const deleteBillRecord = useCallback((id: string) => {
-    setData((d) => ({ ...d, billRecords: d.billRecords.filter((r) => r.id !== id) }));
-  }, [setData]);
-
-  const markPaid = useCallback((id: string, paid: boolean, paymentMethodId?: string) => {
-    setData((d) => ({
-      ...d,
-      billRecords: d.billRecords.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              paid,
-              paidDate: paid ? new Date().toISOString().split('T')[0] : undefined,
-              paymentMethodId: paymentMethodId ?? r.paymentMethodId,
-              updatedAt: now(),
-            }
-          : r
-      ),
-    }));
-  }, [setData]);
-
-  const generateRecordsForPeriod = useCallback((period: string) => {
-    setData((d) => {
-      const [yr, mo] = period.split('-').map(Number);
-      const newRecords: BillRecord[] = [];
-      for (const item of d.billItems) {
-        if (!item.active) continue;
-        if (d.billRecords.find((r) => r.billItemId === item.id && r.period === period)) continue;
-        if (!shouldGenerateForPeriod(item, period)) continue;
-        const day = item.dueDay ?? 1;
-        const maxDay = new Date(yr, mo, 0).getDate();
-        const dueDate = `${period}-${String(Math.min(day, maxDay)).padStart(2, '0')}`;
-        const t = new Date().toISOString();
-        newRecords.push({
-          id: uuidv4(), billItemId: item.id, period, dueDate,
-          amount: item.defaultAmount, paid: false,
-          paymentMethodId: item.defaultPaymentMethodId,
-          note: '', createdAt: t, updatedAt: t,
-        });
-      }
-      return { ...d, billRecords: [...d.billRecords, ...newRecords] };
-    });
-  }, [setData]);
-
-  // ── Settings ───────────────────────────────────────────────────────────────
-  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
-    setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
-  }, [setData]);
-
-  // ── Export (current workspace) ─────────────────────────────────────────────
-  const exportJSON = useCallback(() => {
-    const ws = root.workspaces.find((w) => w.id === root.activeWorkspaceId) ?? root.workspaces[0];
-    const blob = new Blob([JSON.stringify(ws.data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `billmaster_${ws.name}_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [root]);
-
-  const exportCSV = useCallback(() => {
-    const ws = root.workspaces.find((w) => w.id === root.activeWorkspaceId) ?? root.workspaces[0];
-    const d = ws.data;
-    const headers = ['帳單名稱', '分類', '期數', '到期日', '金額', '已付款', '付款日期', '付款方法', '備註'];
-    const rows = d.billRecords.map((r) => {
-      const item = d.billItems.find((b) => b.id === r.billItemId);
-      const cat = d.categories.find((c) => c.id === item?.categoryId);
-      const pm = d.paymentMethods.find((p) => p.id === r.paymentMethodId);
-      return [
-        item?.name ?? '', cat?.name ?? '', r.period, r.dueDate ?? '',
-        r.amount ?? '', r.paid ? '是' : '否', r.paidDate ?? '', pm?.label ?? '', r.note ?? '',
-      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
-    });
-    const csv = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `billmaster_${ws.name}_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [root]);
-
-  const importJSON = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const parsed = JSON.parse(e.target?.result as string) as AppData;
-        setData(() => parsed);
-      } catch (_) {
-        alert('匯入失敗：無效的 JSON 格式');
-      }
-    };
-    reader.readAsText(file);
-  }, [setData]);
-
-  // ── Export/Import ALL workspaces ───────────────────────────────────────────
-  const exportAllJSON = useCallback(() => {
-    const blob = new Blob([JSON.stringify(root, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `billmaster_ALL_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [root]);
-
-  const importAllJSON = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const parsed = JSON.parse(e.target?.result as string);
-        if (parsed.workspaces && parsed.activeWorkspaceId) {
-          setRoot(parsed as WorkspaceRoot);
-        } else if (parsed.billItems !== undefined) {
-          setData(() => parsed as AppData);
-        } else {
-          alert('匯入失敗：無法識別的格式');
-        }
-      } catch (_) {
-        alert('匯入失敗：無效的 JSON 格式');
-      }
-    };
-    reader.readAsText(file);
-  }, [setData]);
-
-  const resetToSeed = useCallback(() => {
-    setData(() => createEmptyAppData(data.settings.darkMode));
-  }, [setData, data.settings.darkMode]);
-
-  return {
-    data,
-    workspaces, activeWorkspaceId,
-    switchWorkspace, addWorkspace, renameWorkspace, deleteWorkspace,
-    addCategory, updateCategory, deleteCategory, reorderCategories,
-    addPaymentMethod, updatePaymentMethod, deletePaymentMethod, reorderPaymentMethods,
-    addBillItem, updateBillItem, deleteBillItem,
-    addBillRecord, updateBillRecord, deleteBillRecord,
-    markPaid, generateRecordsForPeriod,
-    updateSettings,
-    exportJSON, exportCSV, importJSON,
-    exportAllJSON, importAllJSON,
-    resetToSeed,
-  };
+function download(text: string, name: string, type = 'application/json') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
-function shouldGenerateForPeriod(item: BillItem, period: string): boolean {
-  const [yr, mo] = period.split('-').map(Number);
-  const createdDate = new Date(item.createdAt);
-  const createdPeriod = `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, '0')}`;
+function shouldGenerate(item: BillItem, period: string) {
+  const [yr, mo] = period.split('-').map(Number); const created = new Date(item.createdAt);
+  const diff = (yr - created.getFullYear()) * 12 + mo - created.getMonth() - 1;
+  if (diff < 0) return false;
   switch (item.recurrenceType) {
     case 'monthly': return true;
-    case 'bimonthly': { const [cYr, cMo] = createdPeriod.split('-').map(Number); return ((yr - cYr) * 12 + (mo - cMo)) % 2 === 0; }
-    case 'quarterly': { const [cYr, cMo] = createdPeriod.split('-').map(Number); return ((yr - cYr) * 12 + (mo - cMo)) % 3 === 0; }
-    case 'semi_annual': { const [cYr, cMo] = createdPeriod.split('-').map(Number); return ((yr - cYr) * 12 + (mo - cMo)) % 6 === 0; }
-    case 'annual': return mo === createdDate.getMonth() + 1;
-    case 'one_time': return period === createdPeriod;
-    case 'custom': { const interval = item.recurrenceInterval ?? 1; const [cYr, cMo] = createdPeriod.split('-').map(Number); const diff = (yr - cYr) * 12 + (mo - cMo); return diff >= 0 && diff % interval === 0; }
+    case 'bimonthly': return diff % 2 === 0;
+    case 'quarterly': return diff % 3 === 0;
+    case 'semi_annual': return diff % 6 === 0;
+    case 'annual': return diff % 12 === 0;
+    case 'one_time': return diff === 0;
+    case 'custom': { const n = item.recurrenceInterval ?? 1; return Number.isInteger(n) && n > 0 && diff % n === 0; }
     default: return false;
   }
 }
 
+export function useStore() {
+  const { session } = useAuth();
+  const cloud = useCloudRoot(session?.user.id || '', initialRoot);
+  const { root, setRoot } = cloud;
+  const activeWs = root.workspaces.find(w => w.id === root.activeWorkspaceId) || root.workspaces[0];
+  const data = activeWs.data;
+  useEffect(() => { document.documentElement.classList.toggle('dark', data.settings.darkMode); }, [data.settings.darkMode]);
+  const setData = useCallback((change: (d: AppData) => AppData) => {
+    setRoot(r => {
+      let changed = false;
+      const workspaces = r.workspaces.map(w => {
+        if (w.id !== r.activeWorkspaceId) return w;
+        const next = change(w.data); if (next === w.data) return w; changed = true; return { ...w, data: next };
+      });
+      return changed ? { ...r, workspaces } : r;
+    });
+  }, [setRoot]);
+  const switchWorkspace = (id: string) => setRoot(r => r.activeWorkspaceId === id || !r.workspaces.some(w => w.id === id) ? r : { ...r, activeWorkspaceId: id });
+  const addWorkspace = (name: string) => setRoot(r => {
+    if (r.workspaces.length >= MAX_WORKSPACES) return r;
+    const ws = workspace(name.trim(), r.workspaces[0].data.settings.darkMode);
+    return { ...r, activeWorkspaceId: ws.id, workspaces: [...r.workspaces, ws] };
+  });
+  const renameWorkspace = (id: string, name: string) => setRoot(r => ({ ...r, workspaces: r.workspaces.map(w => w.id === id ? { ...w, name: name.trim() } : w) }));
+  const deleteWorkspace = (id: string) => setRoot(r => {
+    if (r.workspaces.length <= 1 || !r.workspaces.some(w => w.id === id)) return r;
+    const workspaces = r.workspaces.filter(w => w.id !== id);
+    return { ...r, workspaces, activeWorkspaceId: r.activeWorkspaceId === id ? workspaces[0].id : r.activeWorkspaceId };
+  });
+  const addCategory = (cat: Omit<Category, 'id'>) => setData(d => ({ ...d, categories: [...d.categories, { ...cat, id: uuidv4() }] }));
+  const updateCategory = (id: string, value: Partial<Category>) => setData(d => ({ ...d, categories: patch(d.categories, id, value) }));
+  const deleteCategory = (id: string) => setData(d => {
+    if (d.billItems.some(b => b.categoryId === id)) throw new Error('請先更改使用此分類的賬單分類，再刪除。');
+    return { ...d, categories: d.categories.filter(c => c.id !== id) };
+  });
+  const reorderCategories = (from: number, to: number) => setData(d => ({ ...d, categories: reorder(d.categories, from, to) }));
+  const addPaymentMethod = (pm: Omit<PaymentMethod, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const t = now(); setData(d => ({ ...d, paymentMethods: [...d.paymentMethods, { ...pm, id: uuidv4(), createdAt: t, updatedAt: t }] }));
+  };
+  const updatePaymentMethod = (id: string, value: Partial<PaymentMethod>) => setData(d => ({ ...d, paymentMethods: patch(d.paymentMethods, id, { ...value, updatedAt: now() }) }));
+  const deletePaymentMethod = (id: string) => setData(d => {
+    if (d.billItems.some(b => b.defaultPaymentMethodId === id) || d.billRecords.some(r => r.paymentMethodId === id)) throw new Error('此付款方式已有賬單或記錄使用，請停用或先更改相關記錄。');
+    return { ...d, paymentMethods: d.paymentMethods.filter(p => p.id !== id) };
+  });
+  const reorderPaymentMethods = (from: number, to: number) => setData(d => ({ ...d, paymentMethods: reorder(d.paymentMethods, from, to) }));
+  const addBillItem = (item: Omit<BillItem, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const t = now(); setData(d => ({ ...d, billItems: [...d.billItems, { ...item, id: uuidv4(), createdAt: t, updatedAt: t }] }));
+  };
+  const updateBillItem = (id: string, value: Partial<BillItem>) => setData(d => ({ ...d, billItems: patch(d.billItems, id, { ...value, updatedAt: now() }) }));
+  const deleteBillItem = (id: string) => setData(d => ({ ...d, billItems: d.billItems.filter(b => b.id !== id), billRecords: d.billRecords.filter(r => r.billItemId !== id) }));
+  const addBillRecord = (rec: Omit<BillRecord, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const t = now(); setData(d => ({ ...d, billRecords: [...d.billRecords, { ...rec, id: uuidv4(), createdAt: t, updatedAt: t }] }));
+  };
+  const updateBillRecord = (id: string, value: Partial<BillRecord>) => setData(d => ({ ...d, billRecords: patch(d.billRecords, id, { ...value, updatedAt: now() }) }));
+  const deleteBillRecord = (id: string) => setData(d => ({ ...d, billRecords: d.billRecords.filter(r => r.id !== id) }));
+  const markPaid = (id: string, paid: boolean, paymentMethodId?: string) => setData(d => ({ ...d, billRecords: d.billRecords.map(r => r.id === id ? { ...r, paid, paidDate: paid ? now().split('T')[0] : undefined, paymentMethodId: paymentMethodId ?? r.paymentMethodId, updatedAt: now() } : r) }));
+  const generateRecordsForPeriod = useCallback((period: string) => {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return;
+    setData(d => {
+      const [yr, mo] = period.split('-').map(Number);
+      const records: BillRecord[] = [];
+      for (const b of d.billItems) {
+        if (!b.active || !shouldGenerate(b, period) || d.billRecords.some(r => r.billItemId === b.id && r.period === period)) continue;
+        const day = Math.max(1, Math.min(b.dueDay ?? 1, new Date(yr, mo, 0).getDate())); const t = now();
+        records.push({ id: uuidv4(), billItemId: b.id, period, dueDate: `${period}-${String(day).padStart(2, '0')}`, amount: b.defaultAmount, paid: false, paymentMethodId: b.defaultPaymentMethodId, note: '', createdAt: t, updatedAt: t });
+      }
+      return records.length ? { ...d, billRecords: [...d.billRecords, ...records] } : d;
+    });
+  }, [setData]);
+  const updateSettings = (value: Partial<AppSettings>) => setData(d => ({ ...d, settings: { ...d.settings, ...value } }));
+  const exportJSON = () => download(JSON.stringify(data, null, 2), `billmaster_${activeWs.name}.json`);
+  const exportAllJSON = () => download(JSON.stringify(root, null, 2), 'billmaster_ALL.json');
+  const exportCSV = () => {
+    const rows = data.billRecords.map(r => {
+      const b = data.billItems.find(x => x.id === r.billItemId);
+      return [b?.name ?? '', data.categories.find(c => c.id === b?.categoryId)?.name ?? '', r.period, r.dueDate ?? '', r.amount ?? '', r.paid ? '是' : '否', r.paidDate ?? '', data.paymentMethods.find(p => p.id === r.paymentMethodId)?.label ?? '', r.note ?? ''];
+    });
+    const csv = [['帳單名稱', '分類', '期數', '到期日', '金額', '已付款', '付款日期', '付款方法', '備註'], ...rows]
+      .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    download('\uFEFF' + csv, `billmaster_${activeWs.name}.csv`, 'text/csv;charset=utf-8');
+  };
+  const importJSON = async (file: File) => {
+    try { const next = JSON.parse(await file.text()) as AppData; setData(() => next); }
+    catch { alert('匯入失敗：無效的 JSON'); }
+  };
+  const importAllJSON = async (file: File) => {
+    try {
+      const next = JSON.parse(await file.text());
+      if (Array.isArray(next.workspaces)) setRoot(next as WorkspaceRoot);
+      else setData(() => next as AppData);
+    } catch { alert('匯入失敗：無效的 JSON'); }
+  };
+  const resetToSeed = () => setData(d => emptyData(d.settings.darkMode));
+  return { data, workspaces: root.workspaces, activeWorkspaceId: root.activeWorkspaceId,
+    switchWorkspace, addWorkspace, renameWorkspace, deleteWorkspace,
+    addCategory, updateCategory, deleteCategory, reorderCategories,
+    addPaymentMethod, updatePaymentMethod, deletePaymentMethod, reorderPaymentMethods,
+    addBillItem, updateBillItem, deleteBillItem, addBillRecord, updateBillRecord, deleteBillRecord,
+    markPaid, generateRecordsForPeriod, updateSettings, exportJSON, exportCSV, importJSON,
+    exportAllJSON, importAllJSON, resetToSeed,
+    cloudReady: cloud.ready, cloudStatus: cloud.status, cloudError: cloud.error, retrySave: cloud.retrySave };
+}
 export type StoreType = ReturnType<typeof useStore>;

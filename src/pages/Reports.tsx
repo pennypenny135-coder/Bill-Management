@@ -69,7 +69,7 @@ function BillFilterPanel({
   }, {} as Record<string, any[]>);
   const uncategorised = filtered.filter((b) => !categories.find((c) => c.id === b.categoryId));
 
-  const allSelected = billItems.every((b) => selectedIds.has(b.id));
+
 
   return (
     <div className="relative">

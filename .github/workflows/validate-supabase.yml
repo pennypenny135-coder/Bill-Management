@@ -1,0 +1,132 @@
+name: Validate Supabase integration
+
+on:
+  push:
+    branches: [feature/supabase-google-auth]
+    paths:
+      - '.github/workflows/validate-supabase.yml'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+  workflow_dispatch:
+
+concurrency:
+  group: validate-supabase-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/feature/supabase-google-auth'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_validation_only
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Remove the known unused Reports declaration only if unreferenced
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const file = 'src/pages/Reports.tsx';
+          const source = fs.readFileSync(file, 'utf8');
+          const declaration = '  const allSelected = billItems.every((b) => selectedIds.has(b.id));';
+          const references = source.match(/\ballSelected\b/g) || [];
+          if (source.includes(declaration) && references.length === 1) {
+            fs.writeFileSync(file, source.replace(declaration, ''));
+            console.info('Removed the single unused allSelected declaration.');
+          } else {
+            console.info('No unreferenced matching declaration to remove; source left unchanged.');
+          }
+          NODE
+      - name: Regenerate real lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Verify clean installation
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript check
+        id: types
+        shell: bash
+        run: |
+          set +e
+          npx tsc --noEmit > /tmp/bill-types.log 2>&1
+          result=$?
+          cat /tmp/bill-types.log
+          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Production build
+        id: build
+        shell: bash
+        run: |
+          set +e
+          npm run build > /tmp/bill-build.log 2>&1
+          result=$?
+          cat /tmp/bill-build.log
+          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Write validation report
+        env:
+          TYPES_EXIT: ${{ steps.types.outputs.exit_code }}
+          BUILD_EXIT: ${{ steps.build.outputs.exit_code }}
+          REPORT_SHA: ${{ github.sha }}
+          REPORT_RUN: ${{ github.run_id }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const label = code => code === '0' ? 'PASS' : 'FAIL';
+          const log = file => fs.readFileSync(file, 'utf8').replace(/\u001b\[[0-9;]*m/g, '').slice(0, 40000);
+          const report = [
+            '# Pre-production validation',
+            '',
+            `Source commit before CI cleanup: ${process.env.REPORT_SHA}`,
+            `GitHub Actions run: ${process.env.REPORT_RUN}`,
+            `Generated: ${new Date().toISOString()}`,
+            '',
+            '- The checked working tree includes targeted removal of the Reports allSelected declaration only when it has no other references.',
+            '- Lockfile regenerated with npm; npm ci completed successfully.',
+            `- TypeScript: ${label(process.env.TYPES_EXIT)} (exit ${process.env.TYPES_EXIT}).`,
+            `- Production build: ${label(process.env.BUILD_EXIT)} (exit ${process.env.BUILD_EXIT}).`,
+            '- Build uses non-production placeholder Supabase configuration; it does not prove live OAuth or database access.',
+            '- Google account A/B browser isolation and refresh persistence: NOT TESTED by this workflow.',
+            '- Database RLS end-to-end access tests: NOT TESTED by this workflow.',
+            '- No merge to main or Production deployment performed by this workflow.',
+            '',
+            '## TypeScript output',
+            '```text', log('/tmp/bill-types.log'), '```',
+            '',
+            '## Build output',
+            '```text', log('/tmp/bill-build.log'), '```',
+            ''
+          ].join('\n');
+          fs.writeFileSync('validation-report.md', report);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
+          NODE
+      - name: Commit checked source cleanup, lockfile and report to feature branch only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          test "$GITHUB_REF" = 'refs/heads/feature/supabase-google-auth'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/Reports.tsx package-lock.json validation-report.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: remove unused Reports variable and record validation results'
+            auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+            git -c http.extraheader="AUTHORIZATION: basic $auth" push "https://github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/feature/supabase-google-auth
+          fi
+      - name: Enforce checks
+        env:
+          TYPES_EXIT: ${{ steps.types.outputs.exit_code }}
+          BUILD_EXIT: ${{ steps.build.outputs.exit_code }}
+        run: |
+          test "$TYPES_EXIT" = '0'
+          test "$BUILD_EXIT" = '0'
