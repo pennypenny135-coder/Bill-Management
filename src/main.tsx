@@ -2,19 +2,17 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
+import { AuthProvider } from './auth/AuthProvider';
+import AuthBoundary from './auth/AuthBoundary';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <AuthProvider><AuthBoundary><App /></AuthBoundary></AuthProvider>
   </StrictMode>
 );
 
-// Register service worker for PWA
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then((reg) => console.log('SW registered', reg.scope))
-      .catch((err) => console.log('SW registration failed', err));
+    navigator.serviceWorker.register('/sw.js').catch(err => console.error('SW registration failed', err));
   });
 }

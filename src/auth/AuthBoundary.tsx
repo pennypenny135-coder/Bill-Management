@@ -20,7 +20,10 @@ export default function AuthBoundary({ children }: { children: ReactNode }) {
   return <>
     <div className="flex items-center justify-between gap-3 bg-slate-900 text-slate-100 px-4 py-2 text-sm">
       <span className="truncate">{session.user.email || '已登入'}</span>
-      <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await signOut(); } finally { setBusy(false); } }}>登出</button>
+      <button type="button" disabled={busy} onClick={async () => {
+        if (!window.dispatchEvent(new Event('bill-management-before-signout', { cancelable: true }))) return;
+        setBusy(true); try { await signOut(); } finally { setBusy(false); }
+      }}>登出</button>
     </div>
     {error && <p role="alert" className="bg-red-950 text-red-200 p-3">{error}</p>}
     <section key={session.user.id}>{children}</section>
